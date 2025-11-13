@@ -900,6 +900,514 @@ drop(private_key);  // Zeroize 自动清零内存
 
 ---
 
+## 🔗 多链支持架构
+
+### 核心挑战：不同的密码学标准
+
+#### 区块链密码学差异
+
+| 区块链 | 椭圆曲线 | 派生标准 | BIP44 路径 | 地址格式 | 当前状态 |
+|--------|---------|---------|-----------|---------|---------|
+| **Ethereum** | secp256k1 | BIP32/BIP44 | m/44'/60'/0'/0/0 | 0x... (Hex) | ✅ 已支持 |
+| **BSC** | secp256k1 | BIP32/BIP44 | m/44'/60'/0'/0/0 | 0x... (同ETH) | ✅ 已支持 |
+| **Polygon** | secp256k1 | BIP32/BIP44 | m/44'/60'/0'/0/0 | 0x... (同ETH) | ✅ 已支持 |
+| **Bitcoin** | secp256k1 | BIP32/BIP44 | m/44'/0'/0'/0/0 | bc1.../1.../3... | ✅ 已支持 |
+| **Solana** | **ed25519** | **SLIP-0010** | m/44'/501'/0'/0' | Base58 (32-44) | 🔥 Phase 2 |
+| **Cosmos** | secp256k1 | BIP32/BIP44 | m/44'/118'/0'/0/0 | cosmos1... | ⭐ Phase 3 |
+| **Cardano** | ed25519 | SLIP-0010 | m/1852'/1815'/0'/0/0 | addr1... | 🌟 Phase 4 |
+| **Polkadot** | **sr25519** | SLIP-0010 | m/44'/354'/0'/0/0' | 1... (SS58) | 🌟 Phase 5 |
+
+**关键差异**:
+```
+secp256k1 (Bitcoin/Ethereum 生态)
+    ↕️ 不兼容
+ed25519 (Solana/Cardano)
+    ↕️ 不兼容
+sr25519 (Polkadot)
+```
+
+---
+
+### 解决方案：统一助记词 + 多曲线派生
+
+```
+              一个 BIP39 助记词 (12 个单词)
+                        ↓
+                 生成 512-bit Seed
+                        ↓
+        ┌───────────────┴────────────────┐
+        ↓                                ↓
+  BIP32 派生                      SLIP-0010 派生
+  (secp256k1)                     (ed25519/sr25519)
+        ↓                                ↓
+  ┌─────┴─────┐                    ┌─────┴─────┐
+  ↓           ↓                    ↓           ↓
+Ethereum    Bitcoin              Solana      Cardano
+BSC         Cosmos               Polkadot
+Polygon
+```
+
+**优势**:
+- ✅ 用户只需备份**一个助记词**
+- ✅ 自动支持所有区块链
+- ✅ 与 MetaMask, Phantom 等主流钱包兼容
+- ✅ 符合 BIP39/BIP44/SLIP-0010 行业标准
+
+---
+
+### 多链钱包核心实现
+
+```rust
+use bip39::{Mnemonic, Language};
+use ed25519_dalek::{SigningKey, VerifyingKey};
+use k256::ecdsa::SigningKey as Secp256k1Key;
+use slip10::{derive_key_from_path, Curve};
+
+// ═══════════════════════════════════════════════════════
+//  统一的多链钱包
+// ═══════════════════════════════════════════════════════
+
+pub struct MultiChainWallet {
+    mnemonic: Mnemonic,
+    seed: [u8; 64],
+}
+
+impl MultiChainWallet {
+    /// 生成新钱包
+    pub fn generate() -> Result<(Self, String), WalletError> {
+        let mnemonic = Mnemonic::generate(12)?;
+        let phrase = mnemonic.to_string();
+        let seed = mnemonic.to_seed("");
+        
+        Ok((
+            MultiChainWallet {
+                mnemonic,
+                seed: seed.try_into().unwrap(),
+            },
+            phrase,
+        ))
+    }
+    
+    /// 从助记词恢复
+    pub fn from_mnemonic(phrase: &str) -> Result<Self, WalletError> {
+        let mnemonic = Mnemonic::parse_in(Language::English, phrase)?;
+        let seed = mnemonic.to_seed("");
+        
+        Ok(MultiChainWallet {
+            mnemonic,
+            seed: seed.try_into().unwrap(),
+        })
+    }
+    
+    // ═══════════════════════════════════════════════════════
+    //  Ethereum 系列 (secp256k1 + BIP32)
+    // ═══════════════════════════════════════════════════════
+    
+    /// 派生 Ethereum 钱包
+    pub fn derive_ethereum(&self, index: u32) -> Result<EthereumWallet, WalletError> {
+        use coins_bip32::path::DerivationPath;
+        
+        // BIP44 路径: m/44'/60'/0'/0/{index}
+        let path = format!("m/44'/60'/0'/0/{}", index);
+        let derivation_path = DerivationPath::from_str(&path)?;
+        
+        // BIP32 派生 (secp256k1)
+        let child_key = derivation_path.derive(&self.seed)?;
+        let private_key = Secp256k1Key::from_bytes(&child_key.private_key().to_bytes())?;
+        let address = ethereum_address_from_key(&private_key);
+        
+        Ok(EthereumWallet { private_key, address })
+    }
+    
+    /// 派生 BSC 钱包 (与 Ethereum 相同)
+    pub fn derive_bsc(&self, index: u32) -> Result<EthereumWallet, WalletError> {
+        self.derive_ethereum(index)
+    }
+    
+    /// 派生 Polygon 钱包 (与 Ethereum 相同)
+    pub fn derive_polygon(&self, index: u32) -> Result<EthereumWallet, WalletError> {
+        self.derive_ethereum(index)
+    }
+    
+    // ═══════════════════════════════════════════════════════
+    //  Solana (ed25519 + SLIP-0010)
+    // ═══════════════════════════════════════════════════════
+    
+    /// 派生 Solana 钱包
+    pub fn derive_solana(&self, index: u32) -> Result<SolanaWallet, WalletError> {
+        // SLIP-0010 路径: m/44'/501'/0'/0' (Solana 使用 hardened)
+        let path = format!("m/44'/501'/{}'", index);
+        
+        // 使用 SLIP-0010 派生 ed25519 密钥
+        let (private_key_bytes, _chain_code) = derive_key_from_path(
+            &self.seed,
+            Curve::Ed25519,
+            &path,
+        ).map_err(|_| WalletError::DerivationFailed)?;
+        
+        // 创建 ed25519 密钥对
+        let signing_key = SigningKey::from_bytes(&private_key_bytes);
+        let verifying_key = signing_key.verifying_key();
+        
+        // Solana 地址 = 公钥 (32 bytes, Base58 编码)
+        let address = bs58::encode(verifying_key.as_bytes()).into_string();
+        
+        Ok(SolanaWallet {
+            signing_key,
+            verifying_key,
+            address,
+        })
+    }
+    
+    // ═══════════════════════════════════════════════════════
+    //  Bitcoin (secp256k1 + BIP32)
+    // ═══════════════════════════════════════════════════════
+    
+    /// 派生 Bitcoin 钱包
+    pub fn derive_bitcoin(&self, index: u32) -> Result<BitcoinWallet, WalletError> {
+        use coins_bip32::path::DerivationPath;
+        
+        // BIP44 路径: m/44'/0'/0'/0/{index}
+        let path = format!("m/44'/0'/0'/0/{}", index);
+        let derivation_path = DerivationPath::from_str(&path)?;
+        
+        let child_key = derivation_path.derive(&self.seed)?;
+        let private_key = Secp256k1Key::from_bytes(&child_key.private_key().to_bytes())?;
+        let address = bitcoin_address_from_key(&private_key);
+        
+        Ok(BitcoinWallet { private_key, address })
+    }
+    
+    // ═══════════════════════════════════════════════════════
+    //  Cosmos (secp256k1 + BIP32 + Bech32)
+    // ═══════════════════════════════════════════════════════
+    
+    /// 派生 Cosmos 钱包
+    pub fn derive_cosmos(&self, index: u32) -> Result<CosmosWallet, WalletError> {
+        use coins_bip32::path::DerivationPath;
+        
+        // BIP44 路径: m/44'/118'/0'/0/{index}
+        let path = format!("m/44'/118'/0'/0/{}", index);
+        let derivation_path = DerivationPath::from_str(&path)?;
+        
+        let child_key = derivation_path.derive(&self.seed)?;
+        let private_key = Secp256k1Key::from_bytes(&child_key.private_key().to_bytes())?;
+        
+        // Cosmos 使用 Bech32 编码，前缀 "cosmos"
+        let address = cosmos_address_from_key(&private_key, "cosmos");
+        
+        Ok(CosmosWallet { private_key, address })
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  链特定钱包类型
+// ═══════════════════════════════════════════════════════
+
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct EthereumWallet {
+    private_key: Secp256k1Key,
+    pub address: String,  // 0x...
+}
+
+impl EthereumWallet {
+    pub async fn sign_transaction(&self, tx: &Transaction) -> Result<Vec<u8>, WalletError> {
+        // 使用 secp256k1 ECDSA 签名
+        let signature = self.private_key.sign_digest(tx.hash())?;
+        Ok(signature.to_bytes().to_vec())
+    }
+}
+
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct SolanaWallet {
+    signing_key: SigningKey,
+    verifying_key: VerifyingKey,
+    pub address: String,  // Base58
+}
+
+impl SolanaWallet {
+    pub fn sign_transaction(&self, message: &[u8]) -> Result<Vec<u8>, WalletError> {
+        // 使用 ed25519 EdDSA 签名
+        let signature = self.signing_key.sign(message);
+        Ok(signature.to_bytes().to_vec())
+    }
+}
+
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct BitcoinWallet {
+    private_key: Secp256k1Key,
+    pub address: String,  // bc1... / 1... / 3...
+}
+
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct CosmosWallet {
+    private_key: Secp256k1Key,
+    pub address: String,  // cosmos1...
+}
+```
+
+---
+
+### 用户体验流程
+
+#### 创建钱包
+
+```
+用户操作: 点击 "创建钱包"
+   ↓
+生成 12 个单词助记词
+   ↓
+用户备份助记词
+   ↓
+自动派生所有链地址:
+  ✅ Ethereum:  0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6
+  ✅ Solana:    9aE476sH7Ko2jF4eLkwXR3xKxGKwTPqVJzfF8h9Dv2w
+  ✅ Bitcoin:   bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh
+  ✅ BSC:       0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6
+  ✅ Polygon:   0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6
+  ✅ Cosmos:    cosmos1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygew
+```
+
+#### 链切换 UI
+
+```rust
+#[component]
+pub fn ChainSwitcher(cx: Scope) -> Element {
+    let current_chain = use_state(cx, || "ethereum");
+    let address = use_state(cx, || String::new());
+    let balance = use_state(cx, || String::new());
+    
+    render! {
+        div {
+            class: "chain-switcher",
+            
+            // 链选择按钮组
+            div {
+                class: "chain-buttons",
+                
+                ChainButton {
+                    chain: "ethereum",
+                    emoji: "🔷",
+                    name: "Ethereum",
+                    active: *current_chain.get() == "ethereum",
+                    on_click: move |_| {
+                        current_chain.set("ethereum");
+                        let wallet_service = use_wallet_service(cx);
+                        let addr = wallet_service.get_ethereum_address(0).unwrap();
+                        address.set(addr);
+                    }
+                }
+                
+                ChainButton {
+                    chain: "solana",
+                    emoji: "🌊",
+                    name: "Solana",
+                    active: *current_chain.get() == "solana",
+                    on_click: move |_| {
+                        current_chain.set("solana");
+                        let wallet_service = use_wallet_service(cx);
+                        let addr = wallet_service.get_solana_address(0).unwrap();
+                        address.set(addr);
+                    }
+                }
+                
+                ChainButton {
+                    chain: "bitcoin",
+                    emoji: "₿",
+                    name: "Bitcoin",
+                    active: *current_chain.get() == "bitcoin",
+                }
+                
+                ChainButton {
+                    chain: "cosmos",
+                    emoji: "⚛️",
+                    name: "Cosmos",
+                    active: *current_chain.get() == "cosmos",
+                }
+            }
+            
+            // 当前链信息
+            div {
+                class: "current-chain-info",
+                
+                h3 { "{current_chain}" }
+                
+                div {
+                    class: "address",
+                    "地址: {address}"
+                }
+                
+                div {
+                    class: "balance",
+                    "余额: {balance}"
+                }
+            }
+        }
+    }
+}
+```
+
+---
+
+### 多链钱包管理器 (WASM 接口)
+
+```rust
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+pub struct MultiChainWalletService {
+    wallet: Option<MultiChainWallet>,
+}
+
+#[wasm_bindgen]
+impl MultiChainWalletService {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        MultiChainWalletService { wallet: None }
+    }
+    
+    /// 创建新钱包
+    #[wasm_bindgen]
+    pub fn create_wallet(&mut self) -> Result<String, JsValue> {
+        let (wallet, mnemonic) = MultiChainWallet::generate()
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        
+        self.wallet = Some(wallet);
+        Ok(mnemonic)
+    }
+    
+    /// 从助记词导入
+    #[wasm_bindgen]
+    pub fn import_wallet(&mut self, mnemonic: &str) -> Result<(), JsValue> {
+        let wallet = MultiChainWallet::from_mnemonic(mnemonic)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        
+        self.wallet = Some(wallet);
+        Ok(())
+    }
+    
+    /// 获取所有链的地址
+    #[wasm_bindgen]
+    pub fn get_all_addresses(&self) -> Result<JsValue, JsValue> {
+        let wallet = self.wallet.as_ref()
+            .ok_or(JsValue::from_str("钱包未初始化"))?;
+        
+        let addresses = serde_json::json!({
+            "ethereum": wallet.derive_ethereum(0)?.address,
+            "solana": wallet.derive_solana(0)?.address,
+            "bitcoin": wallet.derive_bitcoin(0)?.address,
+            "bsc": wallet.derive_bsc(0)?.address,
+            "polygon": wallet.derive_polygon(0)?.address,
+            "cosmos": wallet.derive_cosmos(0)?.address,
+        });
+        
+        Ok(serde_wasm_bindgen::to_value(&addresses)?)
+    }
+    
+    /// 签名交易 (自动检测链类型)
+    #[wasm_bindgen]
+    pub async fn sign_transaction(
+        &self,
+        chain: &str,
+        tx_data: &[u8],
+    ) -> Result<Vec<u8>, JsValue> {
+        let wallet = self.wallet.as_ref()
+            .ok_or(JsValue::from_str("钱包未初始化"))?;
+        
+        match chain {
+            "ethereum" | "bsc" | "polygon" => {
+                let eth = wallet.derive_ethereum(0)?;
+                eth.sign_transaction(&parse_eth_transaction(tx_data)?).await
+            },
+            "solana" => {
+                let sol = wallet.derive_solana(0)?;
+                sol.sign_transaction(tx_data)
+            },
+            "bitcoin" => {
+                let btc = wallet.derive_bitcoin(0)?;
+                btc.sign_transaction(&parse_btc_transaction(tx_data)?)
+            },
+            "cosmos" => {
+                let cosmos = wallet.derive_cosmos(0)?;
+                cosmos.sign_transaction(&parse_cosmos_transaction(tx_data)?)
+            },
+            _ => Err(JsValue::from_str("不支持的链")),
+        }
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+}
+```
+
+---
+
+### 依赖配置
+
+```toml
+[dependencies]
+# BIP39 助记词
+bip39 = "2.0"
+
+# BIP32 派生 (secp256k1 - Ethereum/Bitcoin/Cosmos)
+coins-bip32 = "0.8"
+
+# SLIP-0010 派生 (ed25519/sr25519 - Solana/Cardano/Polkadot)
+slip10 = "0.4"
+
+# 椭圆曲线
+k256 = { version = "0.13", features = ["ecdsa"] }      # secp256k1
+ed25519-dalek = "2.0"                                   # ed25519
+schnorrkel = "0.11"                                     # sr25519 (Polkadot)
+
+# 地址编码
+bs58 = "0.5"           # Base58 (Solana, Bitcoin)
+bech32 = "0.9"         # Bech32 (Cosmos, Bitcoin SegWit)
+hex = "0.4"            # Hex (Ethereum)
+
+# 区块链 SDK
+ethers = { version = "2.0", features = ["legacy"] }
+solana-sdk = "1.17"
+bitcoin = "0.30"
+
+# 密码学基础
+sha2 = "0.10"
+sha3 = "0.10"
+ripemd = "0.1"
+hmac = "0.12"
+
+# 内存安全
+zeroize = { version = "1.7", features = ["derive"] }
+secrecy = "0.8"
+```
+
+---
+
+### 多链实施路线图
+
+| Phase | 链 | 难度 | 时间 | 关键技术 | 状态 |
+|-------|---|------|------|---------|------|
+| **1** | Ethereum, BSC, Polygon, Bitcoin | ⭐⭐ | - | BIP32, secp256k1 | ✅ 已完成 |
+| **2** | Solana | ⭐⭐⭐ | 1 周 | SLIP-0010, ed25519 | 🔥 下一步 |
+| **3** | Cosmos | ⭐⭐ | 3 天 | Bech32 编码 | ⭐ 计划中 |
+| **4** | Cardano | ⭐⭐⭐⭐ | 3 周 | CIP-1852, ed25519 | 🌟 计划中 |
+| **5** | Polkadot | ⭐⭐⭐⭐ | 2 周 | SLIP-0010, sr25519, SS58 | 🌟 计划中 |
+| **6** | NEAR | ⭐⭐⭐ | 2 周 | ed25519, 特殊派生 | 📝 规划中 |
+
+---
+
+### 性能对比
+
+| 操作 | secp256k1 (ETH) | ed25519 (Solana) | 优势 |
+|------|----------------|------------------|------|
+| **密钥生成** | ~50 µs | ~20 µs | ed25519 快 2.5x |
+| **签名** | ~85 µs | ~30 µs | ed25519 快 2.8x |
+| **验证** | ~120 µs | ~50 µs | ed25519 快 2.4x |
+| **密钥大小** | 32 bytes | 32 bytes | 相同 |
+| **签名大小** | 65 bytes (r+s+v) | 64 bytes | ed25519 更小 |
+
+**结论**: ed25519 更快更小，但生态系统较小
+
+---
+
 ## 🏢 企业级 API 完整说明
 
 ### IronCore 企业级架构
