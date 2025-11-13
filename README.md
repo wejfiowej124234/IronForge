@@ -1,10 +1,25 @@
-# IronForge
+# IronForge - Web Wallet
 
-A web-based cryptocurrency wallet built with Rust and WebAssembly.
+> 🌐 Browser-based cryptocurrency wallet built with Rust and WebAssembly
+
+---
+
+## 🌐 Iron Blockchain Wallet Ecosystem
+
+| # | Project | Description | Repository |
+|---|---------|-------------|------------|
+| 1️⃣ | **IronCore** | 🎯 钱包后端 - Backend API Server | [→ Visit](https://github.com/wejfiowej124234/IronCore) |
+| 2️⃣ | **IronForge** | 🌐 前端钱包 - Web Wallet | 👉 **[You are here]** |
+| 3️⃣ | **IronLink-DApp** | 📱 移动端 - Mobile DApp Wallet | [→ Visit](https://github.com/wejfiowej124234/IronLink-DApp) |
+| 4️⃣ | **IronGuard-AI** | 🤖 AI安全 - AI Security Layer | [→ Visit](https://github.com/wejfiowej124234/ironguard-ai) |
+| 5️⃣ | **IronVault-XR** | 🥽 智能眼镜 - AR/VR Wallet | [→ Visit](https://github.com/wejfiowej124234/IronVault-XR) |
+| 6️⃣ | **Attack-Defense** | ⚔️ 攻防知识库 - Security Knowledge Base | [→ Visit](https://github.com/wejfiowej124234/Attack-Defense) |
+
+---
 
 ## Overview
 
-IronForge is a non-custodial wallet that runs directly in web browsers using WebAssembly technology. It provides basic cryptocurrency management functionality without requiring software installation.
+IronForge is a non-custodial wallet that runs directly in web browsers using WebAssembly technology. It provides cryptocurrency management functionality without requiring software installation.
 
 ## Features
 
@@ -14,13 +29,14 @@ IronForge is a non-custodial wallet that runs directly in web browsers using Web
 - **Transaction Management**: Send, receive, and track transactions
 - **Wallet Import/Export**: Compatible with BIP39 mnemonic phrases
 - **No Installation**: Access directly via web browser
+- **WASM Performance**: Native-like performance in the browser
 
 ## Technology Stack
 
 - **Frontend**: Rust + Dioxus Web
 - **Runtime**: WebAssembly (WASM)
-- **Storage**: IndexedDB with encryption
-- **Backend**: Connects to [Rust-Blockchain-Secure-Wallet](https://github.com/DarkCrab-Rust/Rust-Blockchain-Secure-Wallet)
+- **Storage**: IndexedDB with AES-256-GCM encryption
+- **Backend**: Connects to [IronCore](https://github.com/wejfiowej124234/IronCore)
 
 ## Supported Networks
 
@@ -48,7 +64,7 @@ cargo install trunk
 rustup target add wasm32-unknown-unknown
 
 # Clone and run
-git clone https://github.com/DarkCrab-Rust/IronForge.git
+git clone https://github.com/wejfiowej124234/IronForge.git
 cd IronForge
 trunk serve --open
 ```
@@ -60,6 +76,7 @@ trunk serve --open
 - Keys never transmitted to servers
 - Users responsible for backing up mnemonics
 - Recommend using hardware wallets for large amounts
+- Integration with [IronGuard-AI](https://github.com/wejfiowej124234/ironguard-ai) for threat detection
 
 ## Project Structure
 
@@ -76,19 +93,11 @@ IronForge/
 
 ## Backend Integration
 
-Connects to existing Rust backend API:
-- API Repository: [Rust-Blockchain-Secure-Wallet](https://github.com/DarkCrab-Rust/Rust-Blockchain-Secure-Wallet)
-- 46 API endpoints
-- 348 test cases
-
-## Ecosystem
-
-Part of the DarkCrab-Rust wallet ecosystem:
-
-- **Web Wallet**: IronForge (this project)
-- **Mobile Wallet**: [IronLink-DApp](https://github.com/DarkCrab-Rust/IronLink-DApp)
-- **Backend API**: [Rust-Blockchain-Secure-Wallet](https://github.com/DarkCrab-Rust/Rust-Blockchain-Secure-Wallet)
-- **Previous Web UI**: [blockchain-wallet-ui](https://github.com/DarkCrab-Rust/blockchain-wallet-ui) (React version)
+Connects to IronCore backend API:
+- API Repository: [IronCore](https://github.com/wejfiowej124234/IronCore)
+- 46+ API endpoints
+- 900+ test cases
+- 95%+ test coverage
 
 ## Development Status
 
@@ -104,9 +113,13 @@ Contributions welcome via pull requests. Please follow Rust coding standards and
 
 ## Contact
 
-- Issues: https://github.com/DarkCrab-Rust/IronForge/issues
-- Repository: https://github.com/DarkCrab-Rust/IronForge
+- Issues: https://github.com/wejfiowej124234/IronForge/issues
+- Repository: https://github.com/wejfiowej124234/IronForge
 
 ## Disclaimer
 
 This is experimental software. Users are responsible for securing their private keys and mnemonic phrases. The developers assume no liability for any losses. Use at your own risk.
+
+---
+
+**Built with ❤️ using Rust + WebAssembly**
