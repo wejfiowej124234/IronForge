@@ -60,11 +60,17 @@ IronForge is a **100% Rust-powered, non-custodial** Web wallet that runs in brow
 
 ## Supported Networks
 
-- Ethereum Mainnet
-- Polygon Mainnet
-- BSC Mainnet
-- Sepolia Testnet
-- BSC Testnet
+### Currently Supported ✅
+- **Ethereum** (Mainnet & Sepolia Testnet)
+- **BSC** (Mainnet & Testnet)
+- **Polygon** (Mainnet & Mumbai Testnet)
+- **Bitcoin** (Mainnet & Testnet)
+
+### Coming Soon 🔥
+- **Solana** (Phase 2 - ~1 week)
+- **Cosmos** (Phase 3 - ~3 days)
+- **Cardano** (Phase 4 - ~3 weeks)
+- **Polkadot** (Phase 5 - ~2 weeks)
 
 ## Usage
 
