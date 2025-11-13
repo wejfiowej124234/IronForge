@@ -17,9 +17,29 @@
 
 ---
 
+## 🏆 核心特性
+
+<div align="center">
+
+| 🦀 Rust 全栈 | 🔓 非托管架构 | 🏢 企业级 API |
+|:----------:|:------------:|:------------:|
+| **100% Rust** 前后端 | 私钥永不上传 | IronCore 46+ 端点 |
+| WASM 接近原生性能 | 用户完全掌控 | 99.9% SLA 保证 |
+| 内存安全编译时保证 | 硬件隔离存储 | 审计日志 + 监控 |
+
+</div>
+
+---
+
 ## Overview
 
-IronForge is a non-custodial wallet that runs directly in web browsers using WebAssembly technology. It provides cryptocurrency management functionality without requiring software installation.
+IronForge is a **100% Rust-powered, non-custodial** Web wallet that runs in browsers via WebAssembly. Built on enterprise-grade IronCore API, it delivers native performance with maximum security.
+
+### Why IronForge?
+
+- 🦀 **Full-Stack Rust**: Frontend (WASM) + Backend (IronCore), 95%+ code reuse
+- 🔓 **Non-Custodial**: You control your private keys, always. We never touch them.
+- 🏢 **Enterprise Backend**: 99.9% SLA, monitoring, audit logs, multi-chain support
 
 ## Features
 
